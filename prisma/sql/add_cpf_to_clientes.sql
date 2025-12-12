@@ -1,0 +1,2 @@
+ALTER TABLE "Clientes" ADD COLUMN "CPF" VARCHAR(14);
+

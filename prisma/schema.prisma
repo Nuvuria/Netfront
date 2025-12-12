@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model Usuario {
+  id       Int    @id @default(autoincrement())
+  nome     String
+  email    String @unique
+  senha    String
+
+  @@map("usuario")
+}
+
+model Clientes {
+  id              Int       @id @default(autoincrement())
+  numeroTelefone  String?   @map("NUMERO DE TELEFONE") @db.VarChar(20)
+  nome            String?   @map("NOME") @db.VarChar(150)
+  endereco        String?   @map("ENDEREÇO") @db.VarChar(200)
+  plano           String?   @map("PLANO") @db.VarChar(20)
+  vencimento      String?   @map("VENCIMENTO") @db.VarChar(10)
+  status          String?   @map("STATUS") @db.VarChar(20)
+  cpf             String?   @map("CPF") @db.VarChar(14)
+  dataUltimoPagamento DateTime? @map("DATA_ULTIMO_PAGAMENTO")
+
+  @@map("clientes")
+}
+
+model Historico {
+  id             Int      @id @default(autoincrement())
+  numeroTelefone String?  @map("NUMERO") @db.VarChar(20)
+  nome           String?  @map("NOME") @db.VarChar(150)
+  mensagem       String?  @map("MENSAGEM") @db.Text
+
+  @@map("historico")
+}
+
+model Agenda {
+  id             Int      @id @default(autoincrement())
+  nome           String?  @db.VarChar(150)
+  telefone       String?  @db.VarChar(20)
+  endereco       String?  @db.VarChar(200)
+  tipo           String?  @db.VarChar(50) // Instalação ou Reparo
+  data           DateTime? // Data preferencial
+  descricao      String?  @db.Text
+  status         String?  @default("Pendente") @db.VarChar(20)
+  createdAt      DateTime @default(now())
+
+  @@map("agenda")
+}

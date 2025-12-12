@@ -1,0 +1,22 @@
+-- CreateTable
+CREATE TABLE "clientes" (
+    "NUMERO DE TELEFONE" VARCHAR(20) NOT NULL,
+    "NOME" VARCHAR(150),
+    "ENDEREÇO" VARCHAR(200),
+    "PLANO" VARCHAR(20),
+    "VENCIMENTO" TIMESTAMP(3),
+    "STATUS" VARCHAR(20),
+    "CPF" VARCHAR(14),
+
+    CONSTRAINT "clientes_pkey" PRIMARY KEY ("NUMERO DE TELEFONE")
+);
+
+-- CreateTable
+CREATE TABLE "historico" (
+    "id" SERIAL NOT NULL,
+    "NUMERO" VARCHAR(20),
+    "NOME" VARCHAR(150),
+    "MENSAGEM" TEXT,
+
+    CONSTRAINT "historico_pkey" PRIMARY KEY ("id")
+);

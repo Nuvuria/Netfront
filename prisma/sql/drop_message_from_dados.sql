@@ -1,0 +1,2 @@
+ALTER TABLE "Dados" DROP COLUMN IF EXISTS "message";
+
