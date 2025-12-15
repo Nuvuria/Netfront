@@ -13,6 +13,9 @@ model Usuario {
   nome     String
   email    String @unique
   senha    String
+  clientes Clientes[]
+  historico Historico[]
+  agenda Agenda[]
 
   @@map("usuario")
 }
@@ -27,6 +30,8 @@ model Clientes {
   status          String?   @map("STATUS") @db.VarChar(20)
   cpf             String?   @map("CPF") @db.VarChar(14)
   dataUltimoPagamento DateTime? @map("DATA_ULTIMO_PAGAMENTO")
+  usuarioId       Int       @default(1)
+  usuario         Usuario   @relation(fields: [usuarioId], references: [id])
 
   @@map("clientes")
 }
@@ -36,6 +41,8 @@ model Historico {
   numeroTelefone String?  @map("NUMERO") @db.VarChar(20)
   nome           String?  @map("NOME") @db.VarChar(150)
   mensagem       String?  @map("MENSAGEM") @db.Text
+  usuarioId      Int      @default(1)
+  usuario        Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@map("historico")
 }
@@ -50,6 +57,8 @@ model Agenda {
   descricao      String?  @db.Text
   status         String?  @default("Pendente") @db.VarChar(20)
   createdAt      DateTime @default(now())
+  usuarioId      Int      @default(1)
+  usuario        Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@map("agenda")
 }

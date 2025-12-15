@@ -3,6 +3,7 @@ import dotenv from 'dotenv'
 import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 dotenv.config()
 
@@ -12,6 +13,21 @@ const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173'
 app.use(cors({ origin: corsOrigin }))
 
 const prisma = new PrismaClient()
+const JWT_SECRET = process.env.JWT_SECRET || 'secret_key'
+
+// Middleware de Autenticação
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization']
+  const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
+
+  if (!token) return res.status(401).json({ error: 'Token não fornecido' })
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Token inválido' })
+    req.userId = user.id
+    next()
+  })
+}
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' })
@@ -29,7 +45,10 @@ app.post('/login', async (req, res) => {
     if (!valid) {
          return res.status(401).json({ error: 'Credenciais inválidas' })
     }
-    res.json({ id: user.id, nome: user.nome, email: user.email })
+    
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' })
+    
+    res.json({ id: user.id, nome: user.nome, email: user.email, token })
   } catch (e) {
     console.error(e)
     res.status(500).json({ error: 'Erro no login' })
@@ -52,7 +71,10 @@ app.post('/register', async (req, res) => {
             senha: hash
         }
     })
-    res.status(201).json({ id: user.id, nome: user.nome, email: user.email })
+    
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' })
+
+    res.status(201).json({ id: user.id, nome: user.nome, email: user.email, token })
   } catch (e) {
     console.error(e)
     res.status(500).json({ error: 'Erro ao registrar' })
@@ -80,7 +102,7 @@ function normalizeBody(b) {
 }
 
 // Rotas para Clientes
-app.get('/clientes', async (req, res) => {
+app.get('/clientes', authenticateToken, async (req, res) => {
   const q = req.query
   const numeroTelefone = q.numeroTelefone ?? q.numero_telefone ?? q['NUMERO DE TELEFONE']
   const cpf = q.cpf ?? q.CPF ?? q.cpf_cliente ?? q.CPF_CLIENTE
@@ -89,7 +111,7 @@ app.get('/clientes', async (req, res) => {
   const vencimento = q.vencimento ?? q.data_vencimento
   
   try {
-    const where = {}
+    const where = { usuarioId: req.userId }
     if (numeroTelefone) where.numeroTelefone = String(numeroTelefone)
     if (cpf) where.cpf = String(cpf)
     if (nome) where.nome = { contains: String(nome), mode: 'insensitive' }
@@ -102,11 +124,18 @@ app.get('/clientes', async (req, res) => {
   }
 })
 
-app.post('/clientes', async (req, res) => {
+app.post('/clientes', authenticateToken, async (req, res) => {
   const nb = normalizeBody(req.body)
+  console.log('📝 POST /clientes recebido:', { body: req.body, normalized: nb, userId: req.userId });
   try {
     // Se ID fornecido, tenta atualizar. Senão, cria novo.
     if (nb.id) {
+        // Verificar propriedade
+        const existing = await prisma.clientes.findFirst({
+            where: { id: Number(nb.id), usuarioId: req.userId }
+        })
+        if (!existing) return res.status(403).json({ error: 'Acesso negado ou não encontrado' })
+
         const updated = await prisma.clientes.update({
             where: { id: Number(nb.id) },
             data: {
@@ -125,6 +154,7 @@ app.post('/clientes', async (req, res) => {
     // Criar novo
     const created = await prisma.clientes.create({
       data: {
+        usuarioId: req.userId,
         numeroTelefone: nb.numeroTelefone ?? null,
         nome: nb.nome ?? null,
         endereco: nb.endereco ?? null,
@@ -141,9 +171,14 @@ app.post('/clientes', async (req, res) => {
   }
 })
 
-app.delete('/clientes/:id', async (req, res) => {
+app.delete('/clientes/:id', authenticateToken, async (req, res) => {
   const id = Number(req.params.id)
   try {
+    const existing = await prisma.clientes.findFirst({
+        where: { id, usuarioId: req.userId }
+    })
+    if (!existing) return res.status(404).json({ error: 'Cliente não encontrado' })
+
     await prisma.clientes.delete({ where: { id } })
     res.status(204).send()
   } catch (e) {
@@ -156,10 +191,15 @@ app.delete('/clientes/:id', async (req, res) => {
 })
 
 // Atualizar Status
-app.patch('/clientes/:id/status', async (req, res) => {
+app.patch('/clientes/:id/status', authenticateToken, async (req, res) => {
     const id = Number(req.params.id)
     const { status } = req.body
     try {
+        const existing = await prisma.clientes.findFirst({
+            where: { id, usuarioId: req.userId }
+        })
+        if (!existing) return res.status(404).json({ error: 'Cliente não encontrado' })
+
         const updated = await prisma.clientes.update({
             where: { id },
             data: { status }
@@ -172,9 +212,14 @@ app.patch('/clientes/:id/status', async (req, res) => {
 })
 
 // Atualizar Pagamento
-app.patch('/clientes/:id/pagamento', async (req, res) => {
+app.patch('/clientes/:id/pagamento', authenticateToken, async (req, res) => {
     const id = Number(req.params.id)
     try {
+        const existing = await prisma.clientes.findFirst({
+            where: { id, usuarioId: req.userId }
+        })
+        if (!existing) return res.status(404).json({ error: 'Cliente não encontrado' })
+
         const updated = await prisma.clientes.update({
             where: { id },
             data: { 
@@ -189,10 +234,37 @@ app.patch('/clientes/:id/pagamento', async (req, res) => {
     }
 })
 
+// Rota Pública para Agendamento Externo
+app.post('/public/agenda', async (req, res) => {
+  const { nome, telefone, endereco, tipo, data, descricao, usuarioId } = req.body
+  
+  if (!usuarioId) return res.status(400).json({ error: 'ID do usuário obrigatório' })
+
+  try {
+    const novo = await prisma.agenda.create({
+      data: {
+        usuarioId: Number(usuarioId),
+        nome,
+        telefone,
+        endereco,
+        tipo,
+        data: data ? new Date(data) : undefined,
+        descricao,
+        status: 'Pendente'
+      }
+    })
+    res.status(201).json(novo)
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Erro ao criar agendamento' })
+  }
+})
+
 // Rotas para Agenda
-app.get('/agenda', async (req, res) => {
+app.get('/agenda', authenticateToken, async (req, res) => {
   try {
     const agendamentos = await prisma.agenda.findMany({
+      where: { usuarioId: req.userId },
       orderBy: { createdAt: 'desc' }
     })
     res.json(agendamentos)
@@ -202,11 +274,12 @@ app.get('/agenda', async (req, res) => {
   }
 })
 
-app.post('/agenda', async (req, res) => {
+app.post('/agenda', authenticateToken, async (req, res) => {
   const { nome, telefone, endereco, tipo, data, descricao, status } = req.body
   try {
     const novo = await prisma.agenda.create({
       data: {
+        usuarioId: req.userId,
         nome,
         telefone,
         endereco,
@@ -223,10 +296,15 @@ app.post('/agenda', async (req, res) => {
   }
 })
 
-app.patch('/agenda/:id', async (req, res) => {
+app.patch('/agenda/:id', authenticateToken, async (req, res) => {
   const id = Number(req.params.id)
   const { status, data, descricao } = req.body
   try {
+    const existing = await prisma.agenda.findFirst({
+        where: { id, usuarioId: req.userId }
+    })
+    if (!existing) return res.status(404).json({ error: 'Agendamento não encontrado' })
+
     const updated = await prisma.agenda.update({
       where: { id },
       data: {
@@ -242,9 +320,14 @@ app.patch('/agenda/:id', async (req, res) => {
   }
 })
 
-app.delete('/agenda/:id', async (req, res) => {
+app.delete('/agenda/:id', authenticateToken, async (req, res) => {
   const id = Number(req.params.id)
   try {
+    const existing = await prisma.agenda.findFirst({
+        where: { id, usuarioId: req.userId }
+    })
+    if (!existing) return res.status(404).json({ error: 'Agendamento não encontrado' })
+
     await prisma.agenda.delete({ where: { id } })
     res.status(204).send()
   } catch (e) {
@@ -254,11 +337,13 @@ app.delete('/agenda/:id', async (req, res) => {
 })
 
 // Dashboard Route
-app.get('/dashboard', async (req, res) => {
+app.get('/dashboard', authenticateToken, async (req, res) => {
   try {
-    const totalClientes = await prisma.clientes.count()
+    const whereUser = { usuarioId: req.userId }
+
+    const totalClientes = await prisma.clientes.count({ where: whereUser })
     const clientesAtivos = await prisma.clientes.count({
-      where: { status: { equals: 'Ativo', mode: 'insensitive' } }
+      where: { ...whereUser, status: { equals: 'Ativo', mode: 'insensitive' } }
     })
     
     // Check vencimento = current day
@@ -276,7 +361,7 @@ app.get('/dashboard', async (req, res) => {
 
     // Buscamos todos que vencem hoje para filtrar no código quem já pagou
     const vencendoHojeRaw = await prisma.clientes.findMany({
-      where: { vencimento: today }
+      where: { ...whereUser, vencimento: today }
     })
     
     const vencendoHoje = vencendoHojeRaw.filter(c => !pagouEsteMes(c.dataUltimoPagamento)).length
@@ -284,6 +369,7 @@ app.get('/dashboard', async (req, res) => {
     // Planos distribution
     const planosGroup = await prisma.clientes.groupBy({
       by: ['plano'],
+      where: whereUser,
       _count: {
         plano: true
       },
@@ -303,6 +389,7 @@ app.get('/dashboard', async (req, res) => {
     // Precisamos buscar todos os ativos e filtrar no JS pois vencimento é string
     const allActive = await prisma.clientes.findMany({
         where: {
+            ...whereUser,
             status: { not: 'Inativo' },
             vencimento: { not: null }
         },
@@ -326,6 +413,7 @@ app.get('/dashboard', async (req, res) => {
     
     const clientesPagos = await prisma.clientes.findMany({
         where: {
+            ...whereUser,
             dataUltimoPagamento: {
                 gte: startOfMonth,
                 lte: endOfMonth
