@@ -9,7 +9,11 @@ dotenv.config()
 
 const app = express()
 app.use(express.json())
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173'
+
+const corsOrigin = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) 
+  : 'http://localhost:5173'
+
 app.use(cors({ origin: corsOrigin }))
 
 const prisma = new PrismaClient()
