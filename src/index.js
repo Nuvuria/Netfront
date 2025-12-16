@@ -246,14 +246,33 @@ app.patch('/clientes/:id/pagamento', authenticateToken, async (req, res) => {
 
 // Rota Pública para Agendamento Externo
 app.post('/public/agenda', async (req, res) => {
-  const { nome, telefone, endereco, tipo, data, descricao, usuarioId } = req.body
+  const { nome, telefone, endereco, tipo, data, descricao, usuarioId, nomeUsuario } = req.body
   
-  if (!usuarioId) return res.status(400).json({ error: 'ID do usuário obrigatório' })
+  let targetUserId = usuarioId
+
+  // Se foi passado nomeUsuario, tenta achar o ID
+  if (nomeUsuario) {
+    try {
+        const user = await prisma.usuario.findFirst({
+            where: { nome: nomeUsuario }
+        })
+        if (user) {
+            targetUserId = user.id
+        } else {
+            return res.status(404).json({ error: 'Usuário não encontrado com este nome' })
+        }
+    } catch (e) {
+        console.error(e)
+        return res.status(500).json({ error: 'Erro ao buscar usuário' })
+    }
+  }
+
+  if (!targetUserId) return res.status(400).json({ error: 'ID do usuário ou nome obrigatório' })
 
   try {
     const novo = await prisma.agenda.create({
       data: {
-        usuarioId: Number(usuarioId),
+        usuarioId: Number(targetUserId),
         nome,
         telefone,
         endereco,
