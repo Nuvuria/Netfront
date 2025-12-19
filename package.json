@@ -13,7 +13,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prepare": "prisma generate"
+    "prepare": "prisma generate",
+    "clean:dados": "node delete_dados.js",
+    "db:create:mensalix": "node scripts/create_mensalix.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",

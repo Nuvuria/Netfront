@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model Usuario {
+  id        Int         @id @default(autoincrement())
+  nome      String
+  email     String      @unique
+  senha     String
+  agenda    Agenda[]
+  clientes  Clientes[]
+  historico Historico[]
+
+  @@map("usuario")
+}
+
+model Clientes {
+  numeroTelefone      String?   @map("NUMERO DE TELEFONE") @db.VarChar(20)
+  nome                String?   @map("NOME") @db.VarChar(150)
+  endereco            String?   @map("ENDEREÇO") @db.VarChar(200)
+  plano               String?   @map("PLANO") @db.VarChar(100)
+  status              String?   @map("STATUS") @db.VarChar(50)
+  cpf                 String?   @map("CPF") @db.VarChar(14)
+  vencimento          String?   @map("VENCIMENTO") @db.VarChar(10)
+  id                  Int       @id @default(autoincrement())
+  dataUltimoPagamento DateTime? @map("DATA_ULTIMO_PAGAMENTO")
+  usuarioId           Int       @default(1)
+  usuario             Usuario   @relation(fields: [usuarioId], references: [id])
+
+  @@map("clientes")
+}
+
+model Historico {
+  id             Int     @id @default(autoincrement())
+  numeroTelefone String? @map("NUMERO") @db.VarChar(20)
+  nome           String? @map("NOME") @db.VarChar(150)
+  mensagem       String? @map("MENSAGEM")
+  usuarioId      Int     @default(1)
+  usuario        Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("historico")
+}
+
+model Agenda {
+  id        Int       @id @default(autoincrement())
+  nome      String?   @db.VarChar(150)
+  telefone  String?   @db.VarChar(20)
+  endereco  String?   @db.VarChar(200)
+  tipo      String?   @db.VarChar(50)
+  data      DateTime?
+  descricao String?
+  status    String?   @default("Pendente") @db.VarChar(20)
+  createdAt DateTime  @default(now())
+  usuarioId Int       @default(1)
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
+
+  @@map("agenda")
+}
+
+model dados {
+  id         Int    @id @default(autoincrement())
+  session_id String @db.VarChar(255)
+  message    Json
+}
+
+model mensalix {
+  id         Int    @id @default(autoincrement())
+  session_id String @db.VarChar(255)
+  message    Json
+}

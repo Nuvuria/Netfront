@@ -17,24 +17,55 @@ model Usuario {
   agenda    Agenda[]
   clientes  Clientes[]
   historico Historico[]
+  relatorios Relatorio[]
+  planos     Planos[]
 
   @@map("usuario")
+}
+
+model Planos {
+  id        Int      @id @default(autoincrement())
+  nome      String   @map("NOME") @db.VarChar(100)
+  valor     Float    @map("VALOR")
+  descricao String?  @map("DESCRICAO")
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("planos")
 }
 
 model Clientes {
   numeroTelefone      String?   @map("NUMERO DE TELEFONE") @db.VarChar(20)
   nome                String?   @map("NOME") @db.VarChar(150)
   endereco            String?   @map("ENDEREÇO") @db.VarChar(200)
-  plano               String?   @map("PLANO") @db.VarChar(20)
-  status              String?   @map("STATUS") @db.VarChar(20)
+  plano               String?   @map("PLANO") @db.VarChar(100)
+  status              String?   @map("STATUS") @db.VarChar(50)
   cpf                 String?   @map("CPF") @db.VarChar(14)
   vencimento          String?   @map("VENCIMENTO") @db.VarChar(10)
   id                  Int       @id @default(autoincrement())
   dataUltimoPagamento DateTime? @map("DATA_ULTIMO_PAGAMENTO")
+  createdAt           DateTime  @default(now()) @map("CRIADO_EM")
   usuarioId           Int       @default(1)
   usuario             Usuario   @relation(fields: [usuarioId], references: [id])
+  relatorios          Relatorio[]
 
   @@map("clientes")
+}
+
+model Relatorio {
+  id          Int      @id @default(autoincrement())
+  tipoEvento  String   @map("TIPO_EVENTO") @db.VarChar(50) // 'PAGAMENTO', 'ATRASO', 'VENCIMENTO_PROXIMO'
+  descricao   String?  @map("DESCRICAO")
+  valor       Float?   @map("VALOR")
+  dataEvento  DateTime @default(now()) @map("DATA_EVENTO")
+  
+  clienteId   Int
+  usuarioId   Int
+  
+  cliente     Clientes @relation(fields: [clienteId], references: [id])
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("relatorio")
 }
 
 model Historico {
@@ -65,6 +96,12 @@ model Agenda {
 }
 
 model dados {
+  id         Int    @id @default(autoincrement())
+  session_id String @db.VarChar(255)
+  message    Json
+}
+
+model mensalix {
   id         Int    @id @default(autoincrement())
   session_id String @db.VarChar(255)
   message    Json

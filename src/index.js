@@ -10,6 +10,10 @@ dotenv.config()
 const app = express()
 app.use(express.json())
 
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL não definido')
+  process.exit(1)
+}
 const corsOrigin = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173'];
@@ -92,6 +96,38 @@ app.post('/register', async (req, res) => {
 })
 
 // Helpers
+function estimarValor(plano) {
+    if (!plano) return 0;
+    
+    let match = plano.match(/R\$\s*([\d.,]+)/i);
+    if (!match) {
+      match = plano.match(/([\d.,]+)/);
+    }
+    
+    if (!match) return 0;
+    
+    let valorStr = match[1];
+    valorStr = valorStr.replace(/[.,]+$/, '');
+
+    if (valorStr.includes(',') && valorStr.includes('.')) {
+        if (valorStr.lastIndexOf(',') > valorStr.lastIndexOf('.')) {
+             valorStr = valorStr.replace(/\./g, '').replace(',', '.');
+        } else {
+             valorStr = valorStr.replace(/,/g, '');
+        }
+    } else if (valorStr.includes(',')) {
+        valorStr = valorStr.replace(',', '.');
+    } else if (valorStr.includes('.')) {
+        const parts = valorStr.split('.');
+        if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+             valorStr = valorStr.replace(/\./g, '');
+        }
+    }
+
+    const valor = parseFloat(valorStr);
+    return isNaN(valor) ? 0 : valor;
+}
+
 function normalizeBody(b) {
   const get = (...keys) => {
     for (const k of keys) {
@@ -200,6 +236,48 @@ app.delete('/clientes/:id', authenticateToken, async (req, res) => {
   }
 })
 
+// Rota de Relatório
+app.get('/relatorio', authenticateToken, async (req, res) => {
+    const { mes, ano } = req.query;
+    
+    if (!mes || !ano) {
+        return res.status(400).json({ error: 'Mês e Ano são obrigatórios' });
+    }
+
+    try {
+        const startDate = new Date(Number(ano), Number(mes) - 1, 1);
+        const endDate = new Date(Number(ano), Number(mes), 0, 23, 59, 59);
+
+        const relatorios = await prisma.relatorio.findMany({
+            where: {
+                usuarioId: req.userId,
+                dataEvento: {
+                    gte: startDate,
+                    lte: endDate
+                },
+                tipoEvento: 'PAGAMENTO'
+            },
+            include: {
+                cliente: {
+                    select: {
+                        nome: true,
+                        plano: true,
+                        status: true
+                    }
+                }
+            },
+            orderBy: {
+                dataEvento: 'desc'
+            }
+        });
+
+        res.json(relatorios);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao buscar relatório' });
+    }
+});
+
 // Atualizar Status
 app.patch('/clientes/:id/status', authenticateToken, async (req, res) => {
     const id = Number(req.params.id)
@@ -237,6 +315,19 @@ app.patch('/clientes/:id/pagamento', authenticateToken, async (req, res) => {
                 status: 'Ativo'
             }
         })
+
+        // Registrar no Relatório
+        const valorEstimado = estimarValor(existing.plano);
+        await prisma.relatorio.create({
+            data: {
+                clienteId: id,
+                usuarioId: req.userId,
+                tipoEvento: 'PAGAMENTO',
+                descricao: 'Pagamento realizado manualmente',
+                valor: valorEstimado
+            }
+        });
+
         res.json(updated)
     } catch (e) {
         console.error(e)
@@ -365,6 +456,59 @@ app.delete('/agenda/:id', authenticateToken, async (req, res) => {
   }
 })
 
+// Rotas para Planos
+app.get('/planos', authenticateToken, async (req, res) => {
+    console.log(`🔍 Buscando planos para usuário: ${req.userId}`);
+    try {
+        const planos = await prisma.planos.findMany({
+            where: { usuarioId: req.userId },
+            orderBy: { nome: 'asc' }
+        });
+        console.log(`✅ Planos encontrados: ${planos.length}`);
+        res.json(planos);
+    } catch (e) {
+        console.error('❌ Erro ao buscar planos:', e);
+        res.status(500).json({ error: 'Erro ao listar planos' });
+    }
+});
+
+app.post('/planos', authenticateToken, async (req, res) => {
+    const { nome, valor, descricao } = req.body;
+    if (!nome || valor === undefined) {
+        return res.status(400).json({ error: 'Nome e valor são obrigatórios' });
+    }
+    try {
+        const novo = await prisma.planos.create({
+            data: {
+                usuarioId: req.userId,
+                nome,
+                valor: parseFloat(valor),
+                descricao
+            }
+        });
+        res.status(201).json(novo);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao criar plano' });
+    }
+});
+
+app.delete('/planos/:id', authenticateToken, async (req, res) => {
+    const id = Number(req.params.id);
+    try {
+        const existing = await prisma.planos.findFirst({
+            where: { id, usuarioId: req.userId }
+        });
+        if (!existing) return res.status(404).json({ error: 'Plano não encontrado' });
+
+        await prisma.planos.delete({ where: { id } });
+        res.status(204).send();
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao deletar plano' });
+    }
+});
+
 // Dashboard Route
 app.get('/dashboard', authenticateToken, async (req, res) => {
   try {
@@ -466,25 +610,29 @@ app.get('/dashboard', authenticateToken, async (req, res) => {
 })
 
 const port = process.env.PORT || 3000
-app.listen(port, async () => {
-  console.log(`Server listening on port ${port}`)
-  
-  // Seed default user if not exists
+;(async () => {
   try {
-    const count = await prisma.usuario.count()
-    if (count === 0) {
-      console.log('Seeding default user...')
-      const hash = await bcrypt.hash('123456', 10)
-      await prisma.usuario.create({
-        data: {
-          nome: 'Admin',
-          email: 'admin@admin.com',
-          senha: hash
-        }
-      })
-      console.log('Default user created: admin@admin.com / 123456')
-    }
+    await prisma.$connect()
   } catch (e) {
-    console.error('Error seeding user:', e)
+    console.error('Erro ao conectar ao banco de dados:', String(e.message ?? e))
+    process.exit(1)
   }
-})
+  app.listen(port, async () => {
+    console.log(`Server listening on port ${port}`)
+    try {
+      const count = await prisma.usuario.count()
+      if (count === 0) {
+        const hash = await bcrypt.hash('123456', 10)
+        await prisma.usuario.create({
+          data: {
+            nome: 'Admin',
+            email: 'admin@admin.com',
+            senha: hash
+          }
+        })
+      }
+    } catch (e) {
+      console.error('Error seeding user:', e)
+    }
+  })
+})()
