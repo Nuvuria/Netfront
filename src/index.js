@@ -595,13 +595,82 @@ app.get('/dashboard', authenticateToken, async (req, res) => {
         orderBy: { dataUltimoPagamento: 'desc' }
     })
 
+    // --- FATURAMENTO REAL E EVOLUÇÃO DE CLIENTES (Últimos 6 meses) ---
+    const faturamentoData = [];
+    const clientesData = [];
+
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const month = d.getMonth();
+        const year = d.getFullYear();
+        
+        const start = new Date(year, month, 1);
+        const end = new Date(year, month + 1, 0, 23, 59, 59);
+        
+        // Faturamento
+        const sum = await prisma.relatorio.aggregate({
+            where: {
+                usuarioId: req.userId,
+                tipoEvento: 'PAGAMENTO',
+                dataEvento: {
+                    gte: start,
+                    lte: end
+                }
+            },
+            _sum: {
+                valor: true
+            }
+        });
+
+        // Novos Clientes
+        const novosClientes = await prisma.clientes.count({
+            where: {
+                usuarioId: req.userId,
+                createdAt: {
+                    gte: start,
+                    lte: end
+                }
+            }
+        });
+        
+        const monthName = start.toLocaleString('pt-BR', { month: 'short' });
+        const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        
+        faturamentoData.push({
+            name: monthLabel,
+            valor: sum._sum.valor || 0
+        });
+
+        clientesData.push({
+            name: monthLabel,
+            total: novosClientes
+        });
+    }
+
+    // --- AGENDA PENDENTE ---
+    // Buscar agendamentos pendentes ou clientes com pendências
+    // Conforme pedido: "notificações na agenda é os clientes pendentes"
+    // Vou buscar da tabela Agenda onde status é Pendente
+    const agendaPendentes = await prisma.agenda.findMany({
+        where: {
+            usuarioId: req.userId,
+            status: 'Pendente'
+        },
+        orderBy: { data: 'asc' },
+        take: 10
+    });
+
     res.json({
       totalClientes,
       clientesAtivos,
       vencendoHoje,
       planos,
       clientesVencidos,
-      clientesPagos
+      clientesPagos,
+      faturamentoData,
+      clientesData,
+      agendaPendentes
     })
   } catch (e) {
     console.error(e)
@@ -609,7 +678,7 @@ app.get('/dashboard', authenticateToken, async (req, res) => {
   }
 })
 
-const port = process.env.PORT || 3000
+const port = process.env.PORT || 3001
 ;(async () => {
   try {
     await prisma.$connect()

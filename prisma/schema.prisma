@@ -19,6 +19,7 @@ model Usuario {
   historico Historico[]
   relatorios Relatorio[]
   planos     Planos[]
+  notificacoes Notificacao[]
 
   @@map("usuario")
 }
